@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="h5 m-0">Reservas</h2>
+    <div>
+      <a class="btn btn-outline-secondary me-2" href="{{ url_for('export_bookings') }}">Exportar CSV</a>
+      <a class="btn btn-primary" href="{{ url_for('new_booking') }}">+ Nova Reserva</a>
+    </div>
+  </div>
+
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-lg-6">
+      <input type="text" class="form-control" name="q" placeholder="Buscar por hóspede (nome/telefone)..." value="{{ q }}">
+    </div>
+    <div class="col-lg-3">
+      <select class="form-select" name="status">
+        <option value="">Todos os status</option>
+        {% for s in ['pendente', 'confirmada', 'cancelada'] %}
+          <option value="{{ s }}" {% if status==s %}selected{% endif %}>{{ s|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-lg-3 d-grid">
+      <button class="btn btn-outline-primary" type="submit">Filtrar</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr><th>ID</th><th>Hóspede</th><th>Check‑in</th><th>Check‑out</th><th>Status</th><th>Valor</th><th class="text-end">Ações</th></tr>
+      </thead>
+      <tbody>
+      {% for b in bookings %}
+        <tr>
+          <td>{{ b.id }}</td>
+          <td>
+            <div class="fw-medium">{{ b.guest.name }}</div>
+            <div class="text-muted small">{{ b.guest.phone or '' }}</div>
+          </td>
+          <td>{{ b.check_in.strftime('%d/%m/%Y') }}</td>
+          <td>{{ b.check_out.strftime('%d/%m/%Y') }}</td>
+          <td>{{ b.status|capitalize }}</td>
+          <td>{{ format_currency_br(b.price_total) }}</td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('edit_booking', booking_id=b.id) }}">Editar</a>
+            <a class="btn btn-sm btn-outline-success" target="_blank" href="{{ url_for('booking_receipt', booking_id=b.id) }}">Recibo PDF</a>
+            <form action="{{ url_for('booking_whatsapp_send', booking_id=b.id) }}" method="post" class="d-inline">
+              <button class="btn btn-sm btn-outline-primary">WhatsApp (auto)</button>
+            </form>
+            <form action="{{ url_for('delete_booking', booking_id=b.id) }}" method="post" class="d-inline" onsubmit="return confirm('Remover reserva?');">
+              <button class="btn btn-sm btn-outline-danger">Excluir</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-muted">Nenhuma reserva encontrada.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

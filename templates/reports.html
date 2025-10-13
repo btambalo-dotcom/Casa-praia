@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2 class="h5 mb-3">Relatórios</h2>
+
+  <div class="row g-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h3 class="h6">Ocupação (noites reservadas / noites do mês)</h3>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Mês</th><th>Noites reservadas</th><th>Noites no mês</th><th>Taxa (%)</th></tr></thead>
+              <tbody>
+              {% for (y, m) in ym_list %}
+                {% set start = "%02d/%d"|format(m, y) %}
+                {% set occ = occupancy_nights[(y,m)] %}
+                {% set cap = capacity[(y,m)] %}
+                {% set rate = (occ * 100.0 / cap) if cap>0 else 0 %}
+                <tr>
+                  <td>{{ start }}</td>
+                  <td>{{ occ }}</td>
+                  <td>{{ cap }}</td>
+                  <td>{{ '%.1f'|format(rate) }}%</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h3 class="h6">Receita por mês</h3>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Mês</th><th>Receita</th></tr></thead>
+              <tbody>
+              {% for (y, m) in ym_list %}
+                {% set start = "%02d/%d"|format(m, y) %}
+                <tr>
+                  <td>{{ start }}</td>
+                  <td>R$ {{ '%.2f'|format(revenue[(y,m)]) }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="text-muted small mb-0">Obs.: a receita mensal aqui soma o valor total de reservas que **tocam** o mês (aproximação simples).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

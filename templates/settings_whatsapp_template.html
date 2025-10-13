@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2 class="h5 mb-3">Configurações — Template do WhatsApp</h2>
+  <form method="post" class="mb-3">
+    <label class="form-label">Mensagem (use placeholders: {nome}, {telefone}, {check_in}, {check_out}, {status}, {valor})</label>
+    <textarea name="template" class="form-control" rows="6">{{ template }}</textarea>
+    <div class="mt-2">
+      <button class="btn btn-primary">Salvar</button>
+    </div>
+  </form>
+  <div class="alert alert-info">
+    Exemplo de saída:<br>
+    <code>Olá Maria! Aqui é da Casa de Praia. Sua reserva de 10/11/2025 a 15/11/2025 está confirmada. Valor total: R$ 2.000,00.</code>
+  </div>
+{% endblock %}
