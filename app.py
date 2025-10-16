@@ -15,13 +15,17 @@ from reportlab.lib.units import cm
 load_dotenv()
 
 def get_database_url():
+    # 1) Se DATABASE_URL estiver definido, usa
     url = os.getenv("DATABASE_URL")
     if url:
         return url
+    # 2) Se houver disco persistente /var/data, usa
     if os.path.isdir("/var/data"):
         return "sqlite:////var/data/app.db"
+    # 3) Em Render, usa /tmp
     if os.getenv("RENDER", "false").lower() == "true" or os.getenv("RENDER_EXTERNAL_URL"):
         return "sqlite:////tmp/app.db"
+    # 4) Local
     return "sqlite:///app.db"
 
 app = Flask(__name__)
@@ -31,6 +35,7 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
 
 db = SQLAlchemy(app)
 
+# ===== MODELOS =====
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
@@ -39,6 +44,7 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=True)
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
+    # mixin mínimo
     is_authenticated = True
     is_active = True
     is_anonymous = False
@@ -48,7 +54,6 @@ class Setting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, index=True, nullable=False)
     value = db.Column(db.Text)
-
     @staticmethod
     def get(key, default=None):
         s = Setting.query.filter_by(key=key).first()
@@ -69,7 +74,7 @@ class Guest(db.Model):
     cpf = db.Column(db.String(20), index=True)
     rg = db.Column(db.String(30))
     address = db.Column(db.String(255))
-    companions = db.Column(db.Text)
+    companions = db.Column(db.Text)  # um por linha
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     bookings = db.relationship("Booking", backref="guest", lazy=True, cascade="all, delete-orphan")
 
@@ -80,15 +85,19 @@ class Booking(db.Model):
     check_out = db.Column(db.Date, nullable=False, index=True)
     price_total = db.Column(db.Float)
     status = db.Column(db.String(20), default="pendente")
-    payment_method = db.Column(db.String(30))
+    payment_method = db.Column(db.String(30))  # pix | dinheiro | cartão...
     note = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# ===== LOGIN =====
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
-@login_manager.user_loader
-def load_user(uid): return User.query.get(int(uid))
 
+@login_manager.user_loader
+def load_user(uid): 
+    return User.query.get(int(uid))
+
+# ===== UTILS =====
 def seed_admin_and_defaults():
     username = os.getenv("ADMIN_USERNAME", "admin")
     pwd = os.getenv("ADMIN_PASSWORD", "admin")
@@ -97,7 +106,8 @@ def seed_admin_and_defaults():
         db.session.add(u); db.session.commit()
         print(f"Admin criado: {username}/{pwd}")
     if Setting.get("wa_message_template") is None:
-        Setting.set("wa_message_template","Olá {nome}! Sua reserva de {check_in} a {check_out} está {status}. Valor: {valor}.")
+        Setting.set("wa_message_template",
+            "Olá {nome}! Sua reserva de {check_in} a {check_out} está {status}. Valor: {valor}.")
     if Setting.get("contract_template") is None:
         Setting.set("contract_template",
             "CONTRATO DE LOCAÇÃO\n\n"
@@ -118,7 +128,8 @@ def seed_admin_and_defaults():
         )
 
 def init_db():
-    db.create_all(); seed_admin_and_defaults()
+    db.create_all()
+    seed_admin_and_defaults()
     print("DB pronto em:", app.config["SQLALCHEMY_DATABASE_URI"])
 
 def sanitize_phone_for_wa(phone:str):
@@ -132,7 +143,7 @@ def br_currency(v):
     if v is None: return "-"
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def render_contract_text(b):
+def render_contract_text(b: 'Booking'):
     g = b.guest
     tpl = Setting.get("contract_template") or ""
     acomp = (g.companions or "").strip().replace("\r\n","\n").replace("\r","\n")
@@ -164,34 +175,43 @@ def send_whatsapp(to_e164, text):
     r = requests.post(url, headers=headers, json=payload, timeout=20)
     return {"ok": 200 <= r.status_code < 300, "status": r.status_code, "resp": r.text}
 
-from flask_login import login_required
-
+# ===== ROTAS =====
 @app.route("/login", methods=["GET","POST"])
 def login():
     if request.method=="POST":
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")):
-            login_user(u); flash("Bem-vindo!", "success"); return redirect(url_for("index"))
+            login_user(u)
+            flash("Bem-vindo!", "success")
+            return redirect(url_for("index"))
         flash("Credenciais inválidas.", "error")
     return render_template("login.html")
 
-@app.route("/logout"); @login_required
+@app.route("/logout")
+@login_required
 def logout():
-    logout_user(); flash("Você saiu.", "success"); return redirect(url_for("login"))
+    logout_user()
+    flash("Você saiu.", "success")
+    return redirect(url_for("login"))
 
-@app.route("/"); @login_required
-def index(): return render_template("index.html")
+@app.route("/")
+@login_required
+def index():
+    return render_template("index.html")
 
-@app.route("/guests"); @login_required
+@app.route("/guests")
+@login_required
 def guests_list():
     q = request.args.get("q","").strip()
     query = Guest.query
     if q:
-        like = f"%{q}%"; query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
+        like = f"%{q}%"
+        query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
     guests = query.order_by(Guest.created_at.desc()).limit(300).all()
     return render_template("guests_list.html", guests=guests, q=q)
 
-@app.route("/guests/new", methods=["GET","POST"]); @login_required
+@app.route("/guests/new", methods=["GET","POST"])
+@login_required
 def new_guest():
     if request.method=="POST":
         g = Guest(
@@ -204,12 +224,16 @@ def new_guest():
             address=request.form.get("address","").strip(),
             companions=request.form.get("companions","").strip(),
         )
-        if not g.name: flash("Nome é obrigatório.", "error"); return redirect(url_for("new_guest"))
-        db.session.add(g); db.session.commit(); flash("Hóspede cadastrado!", "success")
+        if not g.name:
+            flash("Nome é obrigatório.", "error")
+            return redirect(url_for("new_guest"))
+        db.session.add(g); db.session.commit()
+        flash("Hóspede cadastrado!", "success")
         return redirect(url_for("guests_list"))
     return render_template("guest_form.html", guest=None)
 
-@app.route("/guests/<int:guest_id>/edit", methods=["GET","POST"]); @login_required
+@app.route("/guests/<int:guest_id>/edit", methods=["GET","POST"])
+@login_required
 def edit_guest(guest_id):
     g = Guest.query.get_or_404(guest_id)
     if request.method=="POST":
@@ -221,22 +245,30 @@ def edit_guest(guest_id):
         g.rg=request.form.get("rg","").strip()
         g.address=request.form.get("address","").strip()
         g.companions=request.form.get("companions","").strip()
-        if not g.name: flash("Nome é obrigatório.", "error"); return redirect(url_for("edit_guest", guest_id=g.id))
-        db.session.commit(); flash("Hóspede atualizado!", "success")
+        if not g.name:
+            flash("Nome é obrigatório.", "error")
+            return redirect(url_for("edit_guest", guest_id=g.id))
+        db.session.commit()
+        flash("Hóspede atualizado!", "success")
         return redirect(url_for("guests_list"))
     return render_template("guest_form.html", guest=g)
 
-@app.route("/bookings"); @login_required
+@app.route("/bookings")
+@login_required
 def bookings_list():
-    q = request.args.get("q","").strip(); status = request.args.get("status","").strip()
+    q = request.args.get("q","").strip()
+    status = request.args.get("status","").strip()
     query = Booking.query.join(Guest)
     if q:
-        like = f"%{q}%"; query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
-    if status: query = query.filter(Booking.status==status)
+        like = f"%{q}%"
+        query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
+    if status:
+        query = query.filter(Booking.status==status)
     bookings = query.order_by(Booking.check_in.desc()).limit(500).all()
     return render_template("bookings_list.html", bookings=bookings, q=q, status=status, br_currency=br_currency)
 
-@app.route("/bookings/new", methods=["GET","POST"]); @login_required
+@app.route("/bookings/new", methods=["GET","POST"])
+@login_required
 def new_booking():
     guests = Guest.query.order_by(Guest.name.asc()).all()
     if request.method=="POST":
@@ -249,13 +281,16 @@ def new_booking():
             payment_method=request.form.get("payment_method","").strip(),
             note=request.form.get("note","").strip(),
         )
-        db.session.add(b); db.session.commit(); flash("Reserva criada!", "success")
+        db.session.add(b); db.session.commit()
+        flash("Reserva criada!", "success")
         return redirect(url_for("bookings_list"))
     return render_template("booking_form.html", booking=None, guests=guests)
 
-@app.route("/bookings/<int:booking_id>/edit", methods=["GET","POST"]); @login_required
+@app.route("/bookings/<int:booking_id>/edit", methods=["GET","POST"])
+@login_required
 def edit_booking(booking_id):
-    b = Booking.query.get_or_404(booking_id); guests = Guest.query.order_by(Guest.name.asc()).all()
+    b = Booking.query.get_or_404(booking_id)
+    guests = Guest.query.order_by(Guest.name.asc()).all()
     if request.method=="POST":
         b.guest_id=int(request.form.get("guest_id"))
         b.check_in=datetime.strptime(request.form.get("check_in"), "%Y-%m-%d").date()
@@ -264,11 +299,13 @@ def edit_booking(booking_id):
         b.price_total=float(request.form.get("price_total")) if request.form.get("price_total") else None
         b.payment_method=request.form.get("payment_method","").strip()
         b.note=request.form.get("note","").strip()
-        db.session.commit(); flash("Reserva atualizada!", "success")
+        db.session.commit()
+        flash("Reserva atualizada!", "success")
         return redirect(url_for("bookings_list"))
     return render_template("booking_form.html", booking=b, guests=guests)
 
-@app.route("/guests/export.csv"); @login_required
+@app.route("/guests/export.csv")
+@login_required
 def export_guests():
     si = io.StringIO(); w = csv.writer(si)
     w.writerow(["id","name","phone","email","cpf","rg","address","companions","note","created_at"])
@@ -277,7 +314,8 @@ def export_guests():
     mem = io.BytesIO(si.getvalue().encode("utf-8-sig")); mem.seek(0)
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="guests.csv")
 
-@app.route("/bookings/export.csv"); @login_required
+@app.route("/bookings/export.csv")
+@login_required
 def export_bookings():
     si = io.StringIO(); w = csv.writer(si)
     w.writerow(["id","guest_name","guest_cpf","check_in","check_out","status","payment_method","price_total","note","created_at"])
@@ -286,7 +324,8 @@ def export_bookings():
     mem = io.BytesIO(si.getvalue().encode("utf-8-sig")); mem.seek(0)
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="bookings.csv")
 
-@app.route("/bookings/<int:booking_id>/receipt.pdf"); @login_required
+@app.route("/bookings/<int:booking_id>/receipt.pdf")
+@login_required
 def booking_receipt(booking_id):
     b = Booking.query.get_or_404(booking_id)
     buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w,h=A4
@@ -306,7 +345,8 @@ def booking_receipt(booking_id):
     c.drawText(t); c.showPage(); c.save(); buf.seek(0)
     return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=f"recibo_reserva_{b.id}.pdf")
 
-@app.route("/bookings/<int:booking_id>/contract.pdf"); @login_required
+@app.route("/bookings/<int:booking_id>/contract.pdf")
+@login_required
 def booking_contract(booking_id):
     b = Booking.query.get_or_404(booking_id)
     text = render_contract_text(b)
@@ -323,34 +363,44 @@ def booking_contract(booking_id):
     c.showPage(); c.save(); buf.seek(0)
     return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=f"contrato_reserva_{b.id}.pdf")
 
-@app.route("/settings/contract-template", methods=["GET","POST"]); @login_required
+@app.route("/settings/contract-template", methods=["GET","POST"])
+@login_required
 def settings_contract_template():
     curr = Setting.get("contract_template") or ""
     if request.method=="POST":
         tpl = request.form.get("template","").strip()
-        if not tpl: flash("Template não pode ficar vazio.", "error")
-        else: Setting.set("contract_template", tpl); flash("Template do contrato atualizado!", "success")
+        if not tpl:
+            flash("Template não pode ficar vazio.", "error")
+        else:
+            Setting.set("contract_template", tpl)
+            flash("Template do contrato atualizado!", "success")
         return redirect(url_for("settings_contract_template"))
     return render_template("settings_contract_template.html", template=curr)
 
-@app.route("/bookings/<int:booking_id>/whatsapp/send", methods=["POST"]); @login_required
+@app.route("/bookings/<int:booking_id>/whatsapp/send", methods=["POST"])
+@login_required
 def booking_whatsapp_send(booking_id):
     b = Booking.query.get_or_404(booking_id)
     to = sanitize_phone_for_wa(b.guest.phone or "")
-    if not to or not to.startswith("+"): flash("Telefone precisa do DDI (ex: +55...)", "error"); return redirect(url_for("bookings_list"))
+    if not to or not to.startswith("+"):
+        flash("Telefone precisa do DDI (ex: +55...)", "error")
+        return redirect(url_for("bookings_list"))
     msg = Setting.get("wa_message_template") or ""
     msg = msg.format(nome=b.guest.name, check_in=br_date(b.check_in), check_out=br_date(b.check_out), status=b.status, valor=br_currency(b.price_total))
     res = send_whatsapp(to, msg)
-    flash("Mensagem enviada (ou simulada)." if res.get("simulado") or res.get("ok") else "Falha ao enviar.", "success" if (res.get("simulado") or res.get("ok")) else "error")
+    flash("Mensagem enviada (ou simulada)." if res.get("simulado") or res.get("ok") else "Falha ao enviar.", 
+         "success" if (res.get("simulado") or res.get("ok")) else "error")
     return redirect(url_for("bookings_list"))
 
-@app.route("/api/events"); @login_required
+@app.route("/api/events")
+@login_required
 def api_events():
+    from datetime import datetime as dt
     start = request.args.get("start"); end = request.args.get("end")
     q = Booking.query
     if start and end:
-        s = datetime.fromisoformat(start.replace("Z","")).date()
-        e = datetime.fromisoformat(end.replace("Z","")).date()
+        s = dt.fromisoformat(start.replace("Z","")).date()
+        e = dt.fromisoformat(end.replace("Z","")).date()
         q = q.filter(Booking.check_in < e, Booking.check_out > s)
     events = []
     for b in q.all():
@@ -358,17 +408,21 @@ def api_events():
         events.append({"id":b.id,"title":f"{b.guest.name} ({b.status})","start":b.check_in.isoformat(),"end":b.check_out.isoformat(),"url":url_for("edit_booking", booking_id=b.id),"color":color})
     return jsonify(events)
 
-@app.route("/calendar"); @login_required
-def calendar_view(): return render_template("calendar.html")
+@app.route("/calendar")
+@login_required
+def calendar_view():
+    return render_template("calendar.html")
 
 @app.route("/healthz")
-def healthz(): return {"ok":True}
+def healthz():
+    return {"ok": True}
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv)>1 and sys.argv[1]=="init-db":
         with app.app_context():
-            db.create_all(); seed_admin_and_defaults()
+            db.create_all()
+            seed_admin_and_defaults()
             print("Inicializado em", app.config["SQLALCHEMY_DATABASE_URI"])
     else:
         app.run(debug=True)

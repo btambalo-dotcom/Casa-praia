@@ -1,1 +1,6 @@
-{% extends 'base.html' %}{% block content %}<div class='p-4 bg-light rounded-3'><h1 class='h4'>Bem-vindo(a) 👋</h1><p>Use o menu para Hóspedes, Reservas e Contrato.</p><a class='btn btn-outline-primary me-2' href='{{ url_for("guests_list") }}'>Hóspedes</a><a class='btn btn-outline-primary me-2' href='{{ url_for("bookings_list") }}'>Reservas</a><a class='btn btn-outline-primary' href='{{ url_for("settings_contract_template") }}'>Template do Contrato</a></div>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<div class='p-4 bg-light rounded-3'>
+<h1 class='h4'>Bem-vindo(a) 👋</h1>
+<p>Use o menu para acessar Calendário, Hóspedes, Reservas e o Template do Contrato.</p>
+</div>
+{% endblock %}

@@ -1,1 +1,13 @@
-{% extends 'base.html' %}{% block content %}<h2 class='h5 mb-3'>Calendário</h2><div id='calendar'></div><script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script><script>document.addEventListener('DOMContentLoaded',function(){var el=document.getElementById('calendar');var c=new FullCalendar.Calendar(el,{initialView:'dayGridMonth',height:'auto',locale:'pt-br',events:'/api/events'});c.render();});</script>{% endblock %}
+{% extends 'base.html' %}{% block content %}
+<h2 class='h5 mb-3'>Calendário</h2><div id='calendar'></div>
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var el=document.getElementById('calendar');
+  var c=new FullCalendar.Calendar(el,{initialView:'dayGridMonth',height:'auto',locale:'pt-br',
+    headerToolbar:{left:'prev,next today',center:'title',right:'dayGridMonth,timeGridWeek'},
+    events:'/api/events'});
+  c.render();
+});
+</script>
+{% endblock %}
