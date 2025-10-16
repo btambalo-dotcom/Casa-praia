@@ -2,7 +2,7 @@
 import os, io, csv, re
 from datetime import datetime, date
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
@@ -15,18 +15,18 @@ from reportlab.lib.units import cm
 load_dotenv()
 
 def get_database_url():
-    # 1) Se DATABASE_URL estiver definido, usa
     url = os.getenv("DATABASE_URL")
-    if url:
-        return url
-    # 2) Se houver disco persistente /var/data, usa
-    if os.path.isdir("/var/data"):
-        return "sqlite:////var/data/app.db"
-    # 3) Em Render, usa /tmp
-    if os.getenv("RENDER", "false").lower() == "true" or os.getenv("RENDER_EXTERNAL_URL"):
-        return "sqlite:////tmp/app.db"
-    # 4) Local
+    if url: return url
+    if os.path.isdir("/var/data"): return "sqlite:////var/data/app.db"
+    if os.getenv("RENDER", "false").lower() == "true" or os.getenv("RENDER_EXTERNAL_URL"): return "sqlite:////tmp/app.db"
     return "sqlite:///app.db"
+
+def get_contract_dir():
+    if os.path.isdir("/var/data"): d="/var/data/contracts"
+    elif os.getenv("RENDER_EXTERNAL_URL"): d="/tmp/contracts"
+    else: d="contracts"
+    os.makedirs(d, exist_ok=True)
+    return d
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = get_database_url()
@@ -35,7 +35,6 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key")
 
 db = SQLAlchemy(app)
 
-# ===== MODELOS =====
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
@@ -44,7 +43,6 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=True)
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
-    # mixin mínimo
     is_authenticated = True
     is_active = True
     is_anonymous = False
@@ -85,19 +83,15 @@ class Booking(db.Model):
     check_out = db.Column(db.Date, nullable=False, index=True)
     price_total = db.Column(db.Float)
     status = db.Column(db.String(20), default="pendente")
-    payment_method = db.Column(db.String(30))  # pix | dinheiro | cartão...
+    payment_method = db.Column(db.String(30))
     note = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ===== LOGIN =====
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
-
 @login_manager.user_loader
-def load_user(uid): 
-    return User.query.get(int(uid))
+def load_user(uid): return User.query.get(int(uid))
 
-# ===== UTILS =====
 def seed_admin_and_defaults():
     username = os.getenv("ADMIN_USERNAME", "admin")
     pwd = os.getenv("ADMIN_PASSWORD", "admin")
@@ -128,8 +122,7 @@ def seed_admin_and_defaults():
         )
 
 def init_db():
-    db.create_all()
-    seed_admin_and_defaults()
+    db.create_all(); seed_admin_and_defaults()
     print("DB pronto em:", app.config["SQLALCHEMY_DATABASE_URI"])
 
 def sanitize_phone_for_wa(phone:str):
@@ -162,6 +155,26 @@ def render_contract_text(b: 'Booking'):
         portaria_senha=os.getenv("PORTARIA_SENHA","-"),
     )
 
+def save_contract_pdf(b: 'Booking'):
+    # Gera e salva contrato em arquivo persistente
+    text = render_contract_text(b)
+    directory = get_contract_dir()
+    fname = f"contrato_reserva_{b.id}.pdf"
+    path = os.path.join(directory, fname)
+    buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w,h=A4
+    c.setTitle("Contrato de Locação"); c.setFont("Helvetica-Bold",14); c.drawString(2*cm,h-2*cm,"Contrato de Locação")
+    y = h-3*cm; c.setFont("Helvetica",10)
+    for para in text.split("\n"):
+        from textwrap import wrap
+        lines = wrap(para, 95) or [""]
+        for ln in lines:
+            if y < 2*cm: c.showPage(); y=h-2*cm; c.setFont("Helvetica",10)
+            c.drawString(2*cm,y,ln); y -= 0.5*cm
+        y -= 0.2*cm
+    c.showPage(); c.save()
+    open(path,"wb").write(buf.getvalue())
+    return path
+
 def send_whatsapp(to_e164, text):
     token = os.getenv("WHATSAPP_TOKEN","").strip()
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID","").strip()
@@ -181,23 +194,18 @@ def login():
     if request.method=="POST":
         u = User.query.filter_by(username=request.form.get("username","").strip()).first()
         if u and u.check_password(request.form.get("password","")):
-            login_user(u)
-            flash("Bem-vindo!", "success")
-            return redirect(url_for("index"))
+            login_user(u); flash("Bem-vindo!", "success"); return redirect(url_for("index"))
         flash("Credenciais inválidas.", "error")
     return render_template("login.html")
 
 @app.route("/logout")
 @login_required
 def logout():
-    logout_user()
-    flash("Você saiu.", "success")
-    return redirect(url_for("login"))
+    logout_user(); flash("Você saiu.", "success"); return redirect(url_for("login"))
 
 @app.route("/")
 @login_required
-def index():
-    return render_template("index.html")
+def index(): return render_template("index.html")
 
 @app.route("/guests")
 @login_required
@@ -205,8 +213,7 @@ def guests_list():
     q = request.args.get("q","").strip()
     query = Guest.query
     if q:
-        like = f"%{q}%"
-        query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
+        like = f"%{q}%"; query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
     guests = query.order_by(Guest.created_at.desc()).limit(300).all()
     return render_template("guests_list.html", guests=guests, q=q)
 
@@ -224,11 +231,8 @@ def new_guest():
             address=request.form.get("address","").strip(),
             companions=request.form.get("companions","").strip(),
         )
-        if not g.name:
-            flash("Nome é obrigatório.", "error")
-            return redirect(url_for("new_guest"))
-        db.session.add(g); db.session.commit()
-        flash("Hóspede cadastrado!", "success")
+        if not g.name: flash("Nome é obrigatório.", "error"); return redirect(url_for("new_guest"))
+        db.session.add(g); db.session.commit(); flash("Hóspede cadastrado!", "success")
         return redirect(url_for("guests_list"))
     return render_template("guest_form.html", guest=None)
 
@@ -245,27 +249,35 @@ def edit_guest(guest_id):
         g.rg=request.form.get("rg","").strip()
         g.address=request.form.get("address","").strip()
         g.companions=request.form.get("companions","").strip()
-        if not g.name:
-            flash("Nome é obrigatório.", "error")
-            return redirect(url_for("edit_guest", guest_id=g.id))
-        db.session.commit()
-        flash("Hóspede atualizado!", "success")
+        if not g.name: flash("Nome é obrigatório.", "error"); return redirect(url_for("edit_guest", guest_id=g.id))
+        db.session.commit(); flash("Hóspede atualizado!", "success")
         return redirect(url_for("guests_list"))
     return render_template("guest_form.html", guest=g)
 
 @app.route("/bookings")
 @login_required
 def bookings_list():
-    q = request.args.get("q","").strip()
-    status = request.args.get("status","").strip()
+    q = request.args.get("q","").strip(); status = request.args.get("status","").strip()
     query = Booking.query.join(Guest)
     if q:
-        like = f"%{q}%"
-        query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
-    if status:
-        query = query.filter(Booking.status==status)
+        like = f"%{q}%"; query = query.filter(or_(Guest.name.ilike(like), Guest.phone.ilike(like), Guest.cpf.ilike(like)))
+    if status: query = query.filter(Booking.status==status)
     bookings = query.order_by(Booking.check_in.desc()).limit(500).all()
     return render_template("bookings_list.html", bookings=bookings, q=q, status=status, br_currency=br_currency)
+
+def post_booking_hooks(b):
+    # 1) Contrato PDF automático
+    if os.getenv("AUTO_CONTRACT_ON_CREATE","true").lower() in ("1","true","yes","y","on"):
+        path = save_contract_pdf(b)
+        rel = os.path.basename(path)
+        flash(f"Contrato gerado: {rel}", "success")
+    # 2) WhatsApp automático (opcional)
+    if os.getenv("AUTO_WHATSAPP_ON_CREATE","false").lower() in ("1","true","yes","y","on"):
+        to = sanitize_phone_for_wa(b.guest.phone or "")
+        if to.startswith("+"):
+            msg = Setting.get("wa_message_template") or ""
+            msg = msg.format(nome=b.guest.name, check_in=br_date(b.check_in), check_out=br_date(b.check_out), status=b.status, valor=br_currency(b.price_total))
+            send_whatsapp(to, msg)
 
 @app.route("/bookings/new", methods=["GET","POST"])
 @login_required
@@ -282,15 +294,14 @@ def new_booking():
             note=request.form.get("note","").strip(),
         )
         db.session.add(b); db.session.commit()
-        flash("Reserva criada!", "success")
+        post_booking_hooks(b)
         return redirect(url_for("bookings_list"))
     return render_template("booking_form.html", booking=None, guests=guests)
 
 @app.route("/bookings/<int:booking_id>/edit", methods=["GET","POST"])
 @login_required
 def edit_booking(booking_id):
-    b = Booking.query.get_or_404(booking_id)
-    guests = Guest.query.order_by(Guest.name.asc()).all()
+    b = Booking.query.get_or_404(booking_id); guests = Guest.query.order_by(Guest.name.asc()).all()
     if request.method=="POST":
         b.guest_id=int(request.form.get("guest_id"))
         b.check_in=datetime.strptime(request.form.get("check_in"), "%Y-%m-%d").date()
@@ -300,9 +311,14 @@ def edit_booking(booking_id):
         b.payment_method=request.form.get("payment_method","").strip()
         b.note=request.form.get("note","").strip()
         db.session.commit()
-        flash("Reserva atualizada!", "success")
+        post_booking_hooks(b)
         return redirect(url_for("bookings_list"))
     return render_template("booking_form.html", booking=b, guests=guests)
+
+@app.route("/contracts/<path:filename>")
+@login_required
+def contracts_download(filename):
+    return send_from_directory(get_contract_dir(), filename, as_attachment=True)
 
 @app.route("/guests/export.csv")
 @login_required
@@ -369,28 +385,10 @@ def settings_contract_template():
     curr = Setting.get("contract_template") or ""
     if request.method=="POST":
         tpl = request.form.get("template","").strip()
-        if not tpl:
-            flash("Template não pode ficar vazio.", "error")
-        else:
-            Setting.set("contract_template", tpl)
-            flash("Template do contrato atualizado!", "success")
+        if not tpl: flash("Template não pode ficar vazio.", "error")
+        else: Setting.set("contract_template", tpl); flash("Template do contrato atualizado!", "success")
         return redirect(url_for("settings_contract_template"))
     return render_template("settings_contract_template.html", template=curr)
-
-@app.route("/bookings/<int:booking_id>/whatsapp/send", methods=["POST"])
-@login_required
-def booking_whatsapp_send(booking_id):
-    b = Booking.query.get_or_404(booking_id)
-    to = sanitize_phone_for_wa(b.guest.phone or "")
-    if not to or not to.startswith("+"):
-        flash("Telefone precisa do DDI (ex: +55...)", "error")
-        return redirect(url_for("bookings_list"))
-    msg = Setting.get("wa_message_template") or ""
-    msg = msg.format(nome=b.guest.name, check_in=br_date(b.check_in), check_out=br_date(b.check_out), status=b.status, valor=br_currency(b.price_total))
-    res = send_whatsapp(to, msg)
-    flash("Mensagem enviada (ou simulada)." if res.get("simulado") or res.get("ok") else "Falha ao enviar.", 
-         "success" if (res.get("simulado") or res.get("ok")) else "error")
-    return redirect(url_for("bookings_list"))
 
 @app.route("/api/events")
 @login_required
@@ -410,19 +408,16 @@ def api_events():
 
 @app.route("/calendar")
 @login_required
-def calendar_view():
-    return render_template("calendar.html")
+def calendar_view(): return render_template("calendar.html")
 
 @app.route("/healthz")
-def healthz():
-    return {"ok": True}
+def healthz(): return {"ok":True}
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv)>1 and sys.argv[1]=="init-db":
         with app.app_context():
-            db.create_all()
-            seed_admin_and_defaults()
+            db.create_all(); seed_admin_and_defaults()
             print("Inicializado em", app.config["SQLALCHEMY_DATABASE_URI"])
     else:
         app.run(debug=True)

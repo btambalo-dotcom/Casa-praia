@@ -6,14 +6,12 @@
     <a class='btn btn-primary' href='{{ url_for("new_booking") }}'>+ Nova Reserva</a>
   </div>
 </div>
-<form class='row g-2 mb-3'>
-  <div class='col-lg-6'><input class='form-control' name='q' value='{{ q }}' placeholder='Buscar por hóspede (nome/telefone/CPF)...'></div>
-  <div class='col-lg-3'><select class='form-select' name='status'>
-    <option value=''>Todos</option>{% for s in ['pendente','confirmada','cancelada'] %}
-    <option value='{{ s }}' {% if status==s %}selected{% endif %}>{{ s|capitalize }}</option>{% endfor %}
-  </select></div>
-  <div class='col-lg-3 d-grid'><button class='btn btn-outline-primary'>Filtrar</button></div>
-</form>
+<form class='row g-2 mb-3'><div class='col-lg-6'>
+<input class='form-control' name='q' value='{{ q }}' placeholder='Buscar por hóspede (nome/telefone/CPF)...'></div>
+<div class='col-lg-3'><select class='form-select' name='status'>
+<option value=''>Todos</option>{% for s in ['pendente','confirmada','cancelada'] %}
+<option value='{{ s }}' {% if status==s %}selected{% endif %}>{{ s|capitalize }}</option>{% endfor %}</select></div>
+<div class='col-lg-3 d-grid'><button class='btn btn-outline-primary'>Filtrar</button></div></form>
 <div class='table-responsive'><table class='table table-sm align-middle'>
 <thead><tr><th>ID</th><th>Hóspede</th><th>Período</th><th>Status</th><th>Pagamento</th><th>Valor</th><th class='text-end'>Ações</th></tr></thead><tbody>
 {% for b in bookings %}
@@ -27,6 +25,7 @@
   <a class='btn btn-sm btn-outline-secondary' href='{{ url_for("edit_booking", booking_id=b.id) }}'>Editar</a>
   <a class='btn btn-sm btn-outline-success' target='_blank' href='{{ url_for("booking_receipt", booking_id=b.id) }}'>Recibo PDF</a>
   <a class='btn btn-sm btn-outline-dark' target='_blank' href='{{ url_for("booking_contract", booking_id=b.id) }}'>Contrato PDF</a>
+  <a class='btn btn-sm btn-outline-secondary' target='_blank' href='{{ url_for("contracts_download", filename="contrato_reserva_" ~ b.id ~ ".pdf") }}'>Baixar (salvo)</a>
   <form action='{{ url_for("booking_whatsapp_send", booking_id=b.id) }}' method='post' class='d-inline'><button class='btn btn-sm btn-outline-primary'>WhatsApp (auto)</button></form>
 </td></tr>
 {% else %}<tr><td colspan='7' class='text-muted'>Nenhuma reserva.</td></tr>{% endfor %}

@@ -20,7 +20,7 @@
 <div class='container'>
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% for cat, msg in messages %}
-    <div class='alert alert-{{ 'warning' if cat=='error' else cat }}'>{{ msg }}</div>
+    <div class='alert alert-{{ 'warning' if cat=='error' else cat }}'>{{ msg|safe }}</div>
   {% endfor %}
 {% endwith %}
 {% block content %}{% endblock %}

@@ -4,10 +4,9 @@
   <div><a class='btn btn-outline-secondary me-2' href='{{ url_for("export_guests") }}'>Exportar CSV</a>
   <a class='btn btn-primary' href='{{ url_for("new_guest") }}'>+ Novo Hóspede</a></div>
 </div>
-<form class='row g-2 mb-3'>
-  <div class='col-sm-9'><input class='form-control' name='q' value='{{ q }}' placeholder='Buscar por nome, telefone ou CPF...'></div>
-  <div class='col-sm-3 d-grid'><button class='btn btn-outline-primary'>Buscar</button></div>
-</form>
+<form class='row g-2 mb-3'><div class='col-sm-9'>
+<input class='form-control' name='q' value='{{ q }}' placeholder='Buscar por nome, telefone ou CPF...'></div>
+<div class='col-sm-3 d-grid'><button class='btn btn-outline-primary'>Buscar</button></div></form>
 <div class='table-responsive'><table class='table table-sm align-middle'>
 <thead><tr><th>ID</th><th>Nome</th><th>Telefone</th><th>CPF</th><th></th></tr></thead><tbody>
 {% for g in guests %}
