@@ -1,12 +1,1 @@
-{% extends "base.html" %}
-{% block content %}
-  <div class="p-4 bg-light rounded-3">
-    <h1 class="h4 mb-3">Bem-vindo(a) 👋</h1>
-    <p>Use o menu acima para acessar o <strong>Calendário</strong>, gerenciar <strong>Hóspedes</strong> e <strong>Reservas</strong>, ver <strong>Relatórios</strong> e ajustar <strong>Configurações</strong>.</p>
-    <ul>
-      <li>Busque hóspedes por <em>nome</em> ou <em>telefone</em>.</li>
-      <li>Crie/edite reservas com check‑in e check‑out; gere recibos em PDF.</li>
-      <li>Envie mensagens de WhatsApp automaticamente usando o seu template.</li>
-    </ul>
-  </div>
-{% endblock %}
+{% extends 'base.html' %}{% block content %}<div class='p-4 bg-light rounded-3'><h1 class='h4'>Bem-vindo(a) 👋</h1><p>Use o menu para Hóspedes, Reservas e Contrato.</p><a class='btn btn-outline-primary me-2' href='{{ url_for("guests_list") }}'>Hóspedes</a><a class='btn btn-outline-primary me-2' href='{{ url_for("bookings_list") }}'>Reservas</a><a class='btn btn-outline-primary' href='{{ url_for("settings_contract_template") }}'>Template do Contrato</a></div>{% endblock %}
