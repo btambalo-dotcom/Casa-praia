@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% block content %}
 <h2 class='h5 mb-3'>{{ 'Editar' if booking else 'Nova' }} Reserva</h2>
-<form method='post' class='row g-3'>
+<form method='post' class='row g-3' enctype='multipart/form-data'>
 <div class='col-md-6'><label class='form-label'>Hóspede *</label>
 <select name='guest_id' class='form-select' required>
 <option value=''>Selecione...</option>
@@ -15,7 +15,14 @@
 <div class='col-md-3'><label class='form-label'>Forma de pagamento</label>
 <input name='payment_method' class='form-control' value='{{ booking.payment_method if booking else '' }}' placeholder='PIX, dinheiro, cartão...'></div>
 <div class='col-md-3'><label class='form-label'>Valor total (R$)</label><input type='number' step='0.01' name='price_total' class='form-control' value='{{ booking.price_total if booking and booking.price_total is not none else '' }}'></div>
+
+<div class='col-md-3'><label class='form-label'>Valor do sinal (R$)</label><input type='number' step='0.01' name='deposit_amount' class='form-control' value='{{ booking.deposit_amount if booking and booking.deposit_amount is not none else '' }}'></div>
+<div class='col-md-3'><label class='form-label'>Nº de parcelas</label><input type='number' step='1' name='installments_count' class='form-control' value='{{ booking.installments_count if booking and booking.installments_count is not none else '' }}'></div>
+<div class='col-md-3'><label class='form-label'>Valor de cada parcela (R$)</label><input type='number' step='0.01' name='installment_value' class='form-control' value='{{ booking.installment_value if booking and booking.installment_value is not none else '' }}'></div>
+<div class='col-12'><label class='form-label'>Datas de vencimento (manual)</label><input name='installments_due' class='form-control' placeholder='ex.: 05/11, 05/12 e 05/01' value='{{ booking.installments_due if booking and booking.installments_due else "" }}'></div>
+
 <div class='col-12'><label class='form-label'>Observações</label><textarea name='note' rows='3' class='form-control'>{{ booking.note if booking else '' }}</textarea></div>
+<div class='col-12'><label class='form-label'>Assinatura do Locatário (PNG/JPG, opcional)</label><input type='file' name='tenant_signature' accept='image/*' class='form-control'></div>
 <div class='col-12 d-flex gap-2'><button class='btn btn-primary'>Salvar</button><a class='btn btn-outline-secondary' href='{{ url_for("bookings_list") }}'>Cancelar</a></div>
 </form>
 {% endblock %}

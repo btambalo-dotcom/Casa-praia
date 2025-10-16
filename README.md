@@ -1,7 +1,7 @@
-# Casa de Praia — v5.1.2
-- Contrato **preenchido automaticamente** ao criar/editar reserva.
-- Salva PDF do contrato em diretório persistente (se existir).
-- Flags (.env):
-  - AUTO_CONTRACT_ON_CREATE=true
-  - AUTO_WHATSAPP_ON_CREATE=true   # envia mensagem automática ao criar reserva
-- Mantém: PIX/Wi‑Fi/Portaria no contrato, disco persistente /var/data.
+# Casa de Praia — v5.1.4
+- Correção do endpoint WhatsApp
+- Upload de assinaturas (locador/locatário)
+- Campos de pagamento na reserva:
+  - deposit_amount (sinal), installments_count, installment_value, installments_due (datas manuais)
+- Contrato e recibo com assinaturas; contrato adiciona trecho de pagamento no final.
+- Persistência automática com /var/data quando existir.
