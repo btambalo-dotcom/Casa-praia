@@ -168,6 +168,9 @@ def render_contract_text(b: 'Booking'):
     g = b.guest
     tpl = Setting.get("contract_template") or ""
     acomp = (g.companions or "").strip().replace("
+", "
+").replace("", "
+")
 ","
 ").replace("","
 ")
