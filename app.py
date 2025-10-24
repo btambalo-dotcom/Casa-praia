@@ -171,14 +171,12 @@ def render_contract_text(b: 'Booking'):
 ", "
 ").replace("", "
 ")
-","
-").replace("","
+", "
+").replace("", "
 ")
     acomp_line = ", ".join([s.strip() for s in acomp.split("
 ") if s.strip()]) or "-"
-
     pay = payment_summary(b)
-    # Build fields with new placeholders
     fields = dict(
         locador_nome=os.getenv("LOCADOR_NOME", "Divalcir Tambalo"),
         nome=g.name, cpf=g.cpf or "-", rg=g.rg or "-", endereco=g.address or "-",
@@ -194,23 +192,17 @@ def render_contract_text(b: 'Booking'):
         pagamento=("Pagamento: " + pay + "." if pay and pay != "-" else ""),
         pagamento_info=(pay if pay and pay != "-" else ""),
     )
-
-    # Render using the template with placeholders
     try:
         body = tpl.format(**fields)
     except KeyError as e:
-        # If a placeholder is missing, surface a helpful name in the output
         body = tpl + f"
 
 [Aviso: Placeholder ausente no sistema: {{{{ {str(e)} }}}}]"
-
-    # Fallback: if template did not include any pagamento placeholder, append it at the end
     if ("{pagamento}" not in tpl and "{pagamento_info}" not in tpl) and pay and pay != "-":
         body += "
 
 Pagamento: " + pay + "."
     return body
-
 
 def save_contract_pdf(b: 'Booking'):
     text = render_contract_text(b)
