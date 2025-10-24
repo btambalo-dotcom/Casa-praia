@@ -167,9 +167,16 @@ def payment_summary(b: 'Booking'):
 def render_contract_text(b: 'Booking'):
     g = b.guest
     tpl = Setting.get("contract_template") or ""
-    acomp = (g.companions or "").strip().replace("\r\n","\n").replace("\r","\n")
-    acomp_line = ", ".join([s.strip() for s in acomp.split("\n") if s.strip()]) or "-"
-    body = tpl.format(
+    acomp = (g.companions or "").strip().replace("
+","
+").replace("","
+")
+    acomp_line = ", ".join([s.strip() for s in acomp.split("
+") if s.strip()]) or "-"
+
+    pay = payment_summary(b)
+    # Build fields with new placeholders
+    fields = dict(
         locador_nome=os.getenv("LOCADOR_NOME", "Divalcir Tambalo"),
         nome=g.name, cpf=g.cpf or "-", rg=g.rg or "-", endereco=g.address or "-",
         acompanhantes=acomp_line,
@@ -181,12 +188,26 @@ def render_contract_text(b: 'Booking'):
         wifi_nome=os.getenv("WIFI_NOME","-"),
         wifi_senha=os.getenv("WIFI_SENHA","-"),
         portaria_senha=os.getenv("PORTARIA_SENHA","-"),
+        pagamento=("Pagamento: " + pay + "." if pay and pay != "-" else ""),
+        pagamento_info=(pay if pay and pay != "-" else ""),
     )
-    # acrescenta seção de pagamento mantendo layout
-    pay = payment_summary(b)
-    if pay != "-":
-        body += "\n\nPagamento: " + pay + "."
+
+    # Render using the template with placeholders
+    try:
+        body = tpl.format(**fields)
+    except KeyError as e:
+        # If a placeholder is missing, surface a helpful name in the output
+        body = tpl + f"
+
+[Aviso: Placeholder ausente no sistema: {{{{ {str(e)} }}}}]"
+
+    # Fallback: if template did not include any pagamento placeholder, append it at the end
+    if ("{pagamento}" not in tpl and "{pagamento_info}" not in tpl) and pay and pay != "-":
+        body += "
+
+Pagamento: " + pay + "."
     return body
+
 
 def save_contract_pdf(b: 'Booking'):
     text = render_contract_text(b)
