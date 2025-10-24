@@ -167,15 +167,8 @@ def payment_summary(b: 'Booking'):
 def render_contract_text(b: 'Booking'):
     g = b.guest
     tpl = Setting.get("contract_template") or ""
-    acomp = (g.companions or "").strip().replace("
-", "
-").replace("", "
-")
-", "
-").replace("", "
-")
-    acomp_line = ", ".join([s.strip() for s in acomp.split("
-") if s.strip()]) or "-"
+    acomp = (g.companions or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    acomp_line = ", ".join([s.strip() for s in acomp.split("\n") if s.strip()]) or "-"
     pay = payment_summary(b)
     fields = dict(
         locador_nome=os.getenv("LOCADOR_NOME", "Divalcir Tambalo"),
@@ -195,14 +188,12 @@ def render_contract_text(b: 'Booking'):
     try:
         body = tpl.format(**fields)
     except KeyError as e:
-        body = tpl + f"
-
-[Aviso: Placeholder ausente no sistema: {{{{ {str(e)} }}}}]"
+        body = tpl + f"\n\n[Aviso: Placeholder ausente no sistema: {{{{ {str(e)} }}}}]"
     if ("{pagamento}" not in tpl and "{pagamento_info}" not in tpl) and pay and pay != "-":
-        body += "
-
-Pagamento: " + pay + "."
+        body += "\n\nPagamento: " + pay + "."
     return body
+
+
 
 def save_contract_pdf(b: 'Booking'):
     text = render_contract_text(b)
