@@ -12,8 +12,16 @@
       <option value="todos" {% if s == "todos" %}selected{% endif %}>Todos</option>
     </select>
   </div>
+  <div class="col-md-3">
+    <label class="form-label">Vencimento de</label>
+    <input type="date" name="start_date" class="form-control" value="{{ start_date or '' }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">até</label>
+    <input type="date" name="end_date" class="form-control" value="{{ end_date or '' }}">
+  </div>
   <div class="col-md-3 d-flex align-items-end">
-    <button class="btn btn-primary">Filtrar</button>
+    <button class="btn btn-primary w-100">Filtrar</button>
   </div>
 </form>
 

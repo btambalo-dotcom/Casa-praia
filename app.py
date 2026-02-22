@@ -115,12 +115,39 @@ class Payment(db.Model):
 
 
 def save_payments_from_form(booking):
-    """Lê os campos payment_due_X e payment_amount_X do formulário
-    e grava na tabela Payment ligada a esta reserva."""
+    """Lê os campos payment_due_X/payment_amount_X e também o depósito inicial,
+    gravando tudo na tabela Payment ligada a esta reserva."""
     # remove parcelas antigas
     for p in booking.payments.all():
         db.session.delete(p)
 
+    # ----- Depósito inicial (sinal) -----
+    dep_amount_str = (request.form.get("deposit_amount") or "").replace(",", ".").strip()
+    dep_date_str = (request.form.get("deposit_date") or "").strip()
+
+    try:
+        dep_amount = float(dep_amount_str) if dep_amount_str else 0
+    except ValueError:
+        dep_amount = 0
+
+    try:
+        dep_date = datetime.strptime(dep_date_str, "%Y-%m-%d").date() if dep_date_str else None
+    except ValueError:
+        dep_date = None
+
+    # Se houver valor e data, lança o depósito como parcela também
+    if dep_amount and dep_date:
+        p_dep = Payment(
+            booking_id=booking.id,
+            due_date=dep_date,
+            amount=dep_amount,
+            status="pago",        # depósito já efetuado
+            paid_date=dep_date,
+            note="Sinal / depósito inicial",
+        )
+        db.session.add(p_dep)
+
+    # ----- Demais parcelas -----
     count_str = (request.form.get("installments_count") or "").strip()
     try:
         n = int(count_str)
@@ -509,7 +536,7 @@ def new_booking():
         db.session.commit()
         post_booking_hooks(b, uploaded_file=request.files.get("tenant_signature"))
         return redirect(url_for("bookings_list"))
-    return render_template("booking_form.html", booking=None, guests=guests)
+    return render_template("booking_form.html", booking=None, guests=guests, br_currency=br_currency, br_date=br_date, Payment=Payment, deposit_payment=None)
 
 @app.route("/bookings/<int:booking_id>/edit", methods=["GET","POST"])
 @login_required
@@ -531,7 +558,13 @@ def edit_booking(booking_id):
         db.session.commit()
         post_booking_hooks(b, uploaded_file=request.files.get("tenant_signature"))
         return redirect(url_for("bookings_list"))
-    return render_template("booking_form.html", booking=b, guests=guests, br_currency=br_currency, br_date=br_date, Payment=Payment)
+    # identifica, se existir, o pagamento referente ao sinal / depósito inicial
+    dep_payment = None
+    for p in b.payments:
+        if (p.note or "").lower().startswith("sinal"):
+            dep_payment = p
+            break
+    return render_template("booking_form.html", booking=b, guests=guests, br_currency=br_currency, br_date=br_date, Payment=Payment, deposit_payment=dep_payment)
 
 # Endpoint WhatsApp (corrigido)
 @app.route("/bookings/<int:booking_id>/whatsapp", methods=["POST"])
@@ -691,11 +724,27 @@ def payment_toggle_paid(payment_id):
 @login_required
 def receivables_report():
     status = request.args.get("status", "pendente")
+    start_str = (request.args.get("start_date") or "").strip()
+    end_str = (request.args.get("end_date") or "").strip()
 
     query = Payment.query.join(Booking).join(Guest)
 
     if status != "todos":
         query = query.filter(Payment.status == status)
+
+    # filtros por período (data de vencimento)
+    if start_str:
+        try:
+            start_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+            query = query.filter(Payment.due_date >= start_date)
+        except ValueError:
+            start_date = None
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+            query = query.filter(Payment.due_date <= end_date)
+        except ValueError:
+            end_date = None
 
     payments = query.order_by(Payment.due_date.asc()).all()
     total = sum((p.amount or 0) for p in payments)
@@ -705,6 +754,8 @@ def receivables_report():
         payments=payments,
         total=total,
         status=status,
+        start_date=start_str,
+        end_date=end_str,
         br_currency=br_currency,
         br_date=br_date,
         today=date.today(),
