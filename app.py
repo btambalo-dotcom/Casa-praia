@@ -100,6 +100,57 @@ class Booking(db.Model):
     installment_value = db.Column(db.Float)
     installments_due = db.Column(db.Text)  # datas em texto livre
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    payments = db.relationship("Payment", backref="booking", lazy="dynamic", cascade="all, delete-orphan")
+
+
+class Payment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("booking.id"), nullable=False, index=True)
+    due_date = db.Column(db.Date, nullable=False, index=True)
+    amount = db.Column(db.Float, nullable=False)
+    status = db.Column(db.String(20), default="pendente", index=True)
+    paid_date = db.Column(db.Date)
+    note = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def save_payments_from_form(booking):
+    """Lê os campos payment_due_X e payment_amount_X do formulário
+    e grava na tabela Payment ligada a esta reserva."""
+    # remove parcelas antigas
+    for p in booking.payments.all():
+        db.session.delete(p)
+
+    count_str = (request.form.get("installments_count") or "").strip()
+    try:
+        n = int(count_str)
+    except ValueError:
+        n = 0
+
+    if n <= 0:
+        return
+
+    for i in range(1, n + 1):
+        due_str = (request.form.get(f"payment_due_{i}") or "").strip()
+        amount_str = (request.form.get(f"payment_amount_{i}") or "").replace(",", ".").strip()
+        note = (request.form.get(f"payment_note_{i}") or "").strip()
+
+        if not due_str or not amount_str:
+            continue
+        try:
+            due_date = datetime.strptime(due_str, "%Y-%m-%d").date()
+            amount = float(amount_str)
+        except ValueError:
+            continue
+
+        p = Payment(
+            booking_id=booking.id,
+            due_date=due_date,
+            amount=amount,
+            note=note,
+        )
+        db.session.add(p)
+
 
 # ===== LOGIN =====
 login_manager = LoginManager(app)
@@ -134,8 +185,8 @@ def seed_admin_and_defaults():
             "Wi‑Fi: {wifi_nome} / Senha: {wifi_senha}\n"
             "Senha de portaria: {portaria_senha}\n\n"
             "Assinaturas:\n"
-            "LOCADOR: ____________________\n"
-            "LOCATÁRIO: ____________________"
+            "{assinatura_locador}\n"
+            "{assinatura_locatario}"
         )
 
 def init_db():
@@ -164,12 +215,32 @@ def payment_summary(b: 'Booking'):
         text += f", com vencimentos em {b.installments_due}"
     return text
 
+
+
+def data_por_extenso(d):
+    meses = [
+        "janeiro","fevereiro","março","abril","maio","junho",
+        "julho","agosto","setembro","outubro","novembro","dezembro"
+    ]
+    return f"{d.day} de {meses[d.month-1]} de {d.year}"
+
 def render_contract_text(b: 'Booking'):
     g = b.guest
     tpl = Setting.get("contract_template") or ""
     acomp = (g.companions or "").strip().replace("\r\n", "\n").replace("\r", "\n")
     acomp_line = ", ".join([s.strip() for s in acomp.split("\n") if s.strip()]) or "-"
     pay = payment_summary(b)
+
+    # Detalhamento de parcelas (número, data, valor)
+    parcelas_list = b.payments.order_by(Payment.due_date.asc()).all() if hasattr(b, "payments") else []
+    if parcelas_list:
+        linhas = []
+        for idx, p in enumerate(parcelas_list, start=1):
+            linhas.append(f"{idx}ª parcela: {br_date(p.due_date)} - {br_currency(p.amount)}")
+        parcelas_text = "\n".join(linhas)
+    else:
+        parcelas_text = ""
+
     fields = dict(
         locador_nome=os.getenv("LOCADOR_NOME", "Divalcir Tambalo"),
         nome=g.name, cpf=g.cpf or "-", rg=g.rg or "-", endereco=g.address or "-",
@@ -184,6 +255,11 @@ def render_contract_text(b: 'Booking'):
         portaria_senha=os.getenv("PORTARIA_SENHA","-"),
         pagamento=("Pagamento: " + pay + "." if pay and pay != "-" else ""),
         pagamento_info=(pay if pay and pay != "-" else ""),
+        parcelas=parcelas_text,
+        data_contrato=br_date(date.today()),
+        data_contrato_extenso=data_por_extenso(date.today()),
+        assinatura_locador="{assinatura_locador}",
+        assinatura_locatario="{assinatura_locatario}",
     )
     try:
         body = tpl.format(**fields)
@@ -195,33 +271,99 @@ def render_contract_text(b: 'Booking'):
 
 
 
+
 def save_contract_pdf(b: 'Booking'):
-    text = render_contract_text(b)
+    full_text = render_contract_text(b)
+    # separa contrato principal das regras do condomínio, se existirem
+    marker = "Regras do Condomínio"
+    if marker in full_text:
+        before, after = full_text.split(marker, 1)
+        contrato_text = before.rstrip()
+        regras_text = (marker + after).lstrip()
+    else:
+        contrato_text = full_text
+        regras_text = ""
+
     directory = get_contract_dir()
     fname = f"contrato_reserva_{b.id}.pdf"
     path = os.path.join(directory, fname)
-    buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w,h=A4
-    c.setTitle("Contrato de Locação"); c.setFont("Helvetica-Bold",14); c.drawString(2*cm,h-2*cm,"Contrato de Locação")
-    y = h-3*cm; c.setFont("Helvetica",10)
-    for para in text.split("\n"):
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+
+    # título
+    c.setTitle("Contrato de Locação")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(2*cm, h-2*cm, "Contrato de Locação")
+
+    y = h - 3*cm
+    c.setFont("Helvetica", 10)
+
+    # página(s) do contrato principal (sem as regras do condomínio)
+    for para in contrato_text.split("\n"):
         from textwrap import wrap
+        stripped = para.strip()
+
+        # marcadores de assinatura inline
+        if stripped in ("{assinatura_locador}", "{assinatura_locatario}"):
+            # se estiver muito baixo, quebra para nova página
+            needed = 3*cm
+            if y < needed + 2*cm:
+                c.showPage()
+                y = h - 3*cm
+                c.setFont("Helvetica", 10)
+
+            sig_dir = get_signature_dir()
+            if stripped == "{assinatura_locador}":
+                img_path = os.path.join(sig_dir, "locador.png")
+                x = 3*cm
+            else:
+                img_path = os.path.join(sig_dir, f"tenant_{b.id}.png")
+                x = 11*cm
+
+            if os.path.isfile(img_path):
+                img_height = 2*cm
+                img_width = 5*cm
+                img_y = y
+                c.drawImage(ImageReader(img_path), x, img_y, width=img_width, height=img_height,
+                            preserveAspectRatio=True, mask='auto')
+                # move y para baixo da assinatura
+                y = img_y - 1.0*cm
+
+            # não desenha o texto do marcador
+            continue
+
+        # parágrafo normal
         lines = wrap(para, 95) or [""]
         for ln in lines:
-            if y < 2*cm: c.showPage(); y=h-2*cm; c.setFont("Helvetica",10)
-            c.drawString(2*cm,y,ln); y -= 0.5*cm
+            if y < 2*cm:
+                c.showPage()
+                y = h - 2*cm
+                c.setFont("Helvetica", 10)
+            c.drawString(2*cm, y, ln)
+            y -= 0.5*cm
         y -= 0.2*cm
-    # assinaturas
-    sig_dir = get_signature_dir()
-    locador = os.path.join(sig_dir, "locador.png")
-    if os.path.isfile(locador):
-        c.drawImage(ImageReader(locador), 3*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(3*cm+2.5*cm,3.7*cm,"Assinatura do Locador")
-    tenant_sig = os.path.join(sig_dir, f"tenant_{b.id}.png")
-    if os.path.isfile(tenant_sig):
-        c.drawImage(ImageReader(tenant_sig), 11*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(11*cm+2.5*cm,3.7*cm,"Assinatura do Locatário")
-    c.showPage(); c.save()
-    open(path,"wb").write(buf.getvalue())
+
+    # se houver texto de regras do condomínio, jogamos para a próxima página
+    if regras_text:
+        c.showPage()
+        y = h - 3*cm
+        c.setFont("Helvetica", 10)
+        for para in regras_text.split("\n"):
+            from textwrap import wrap
+            lines = wrap(para, 95) or [""]
+            for ln in lines:
+                if y < 2*cm:
+                    c.showPage()
+                    y = h - 2*cm
+                    c.setFont("Helvetica", 10)
+                c.drawString(2*cm, y, ln)
+                y -= 0.5*cm
+            y -= 0.2*cm
+
+    c.save()
+    open(path, "wb").write(buf.getvalue())
     return path
 
 def send_whatsapp(to_e164, text):
@@ -355,6 +497,8 @@ def new_booking():
             installments_due=request.form.get("installments_due","").strip(),
         )
         db.session.add(b); db.session.commit()
+        save_payments_from_form(b)
+        db.session.commit()
         post_booking_hooks(b, uploaded_file=request.files.get("tenant_signature"))
         return redirect(url_for("bookings_list"))
     return render_template("booking_form.html", booking=None, guests=guests)
@@ -375,10 +519,11 @@ def edit_booking(booking_id):
         b.installments_count=int(request.form.get("installments_count")) if request.form.get("installments_count") else None
         b.installment_value=float(request.form.get("installment_value")) if request.form.get("installment_value") else None
         b.installments_due=request.form.get("installments_due","").strip()
+        save_payments_from_form(b)
         db.session.commit()
         post_booking_hooks(b, uploaded_file=request.files.get("tenant_signature"))
         return redirect(url_for("bookings_list"))
-    return render_template("booking_form.html", booking=b, guests=guests)
+    return render_template("booking_form.html", booking=b, guests=guests, br_currency=br_currency, br_date=br_date, Payment=Payment)
 
 # Endpoint WhatsApp (corrigido)
 @app.route("/bookings/<int:booking_id>/whatsapp", methods=["POST"])
@@ -441,11 +586,9 @@ def booking_receipt(booking_id):
     locador = os.path.join(sig_dir,"locador.png")
     if os.path.isfile(locador):
         c.drawImage(ImageReader(locador), 3*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(3*cm+2.5*cm,3.7*cm,"Assinatura do Locador")
     tenant_sig = os.path.join(sig_dir, f"tenant_{b.id}.png")
     if os.path.isfile(tenant_sig):
         c.drawImage(ImageReader(tenant_sig), 11*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(11*cm+2.5*cm,3.7*cm,"Assinatura do Locatário")
     c.showPage(); c.save(); buf.seek(0)
     return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=f"recibo_reserva_{b.id}.pdf")
 
@@ -453,29 +596,10 @@ def booking_receipt(booking_id):
 @login_required
 def booking_contract(booking_id):
     b = Booking.query.get_or_404(booking_id)
-    text = render_contract_text(b)
-    buf = io.BytesIO(); c = canvas.Canvas(buf, pagesize=A4); w,h=A4
-    c.setTitle("Contrato de Locação"); c.setFont("Helvetica-Bold",14); c.drawString(2*cm,h-2*cm,"Contrato de Locação")
-    y = h-3*cm; c.setFont("Helvetica",10)
-    for para in text.split("\n"):
-        from textwrap import wrap
-        lines = wrap(para, 95) or [""]
-        for ln in lines:
-            if y < 2*cm: c.showPage(); y=h-2*cm; c.setFont("Helvetica",10)
-            c.drawString(2*cm,y,ln); y -= 0.5*cm
-        y -= 0.2*cm
-    # Assinaturas
-    sig_dir = get_signature_dir()
-    locador = os.path.join(sig_dir,"locador.png")
-    if os.path.isfile(locador):
-        c.drawImage(ImageReader(locador), 3*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(3*cm+2.5*cm,3.7*cm,"Assinatura do Locador")
-    tenant_sig = os.path.join(sig_dir, f"tenant_{b.id}.png")
-    if os.path.isfile(tenant_sig):
-        c.drawImage(ImageReader(tenant_sig), 11*cm, 4.0*cm, width=5*cm, height=2*cm, preserveAspectRatio=True, mask='auto')
-        c.setFont("Helvetica",9); c.drawCentredString(11*cm+2.5*cm,3.7*cm,"Assinatura do Locatário")
-    c.showPage(); c.save(); buf.seek(0)
-    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=f"contrato_reserva_{b.id}.pdf")
+    # Usamos a mesma lógica de geração de PDF do save_contract_pdf,
+    # que respeita os marcadores {assinatura_locador} e {assinatura_locatario}
+    path = save_contract_pdf(b)
+    return send_file(path, mimetype="application/pdf", as_attachment=True, download_name=f"contrato_reserva_{b.id}.pdf")
 
 # -------- Configurações
 @app.route("/settings/contract-template", methods=["GET","POST"])
@@ -500,6 +624,83 @@ def settings_signatures():
             f.stream.seek(0); open(path, "wb").write(f.read())
             msg="Assinatura do locador atualizada!"
     return render_template("settings_signatures.html", message=msg)
+
+
+
+# -------- Parcelas de reservas / Contas a receber
+@app.route("/bookings/<int:booking_id>/payments/new", methods=["POST"])
+@login_required
+def booking_add_payment(booking_id):
+    b = Booking.query.get_or_404(booking_id)
+
+    due_str = (request.form.get("due_date") or "").strip()
+    amount_str = (request.form.get("amount") or "").replace(",", ".").strip()
+    note = (request.form.get("note") or "").strip()
+
+    if not due_str or not amount_str:
+        flash("Preencha data de vencimento e valor da parcela.", "error")
+        return redirect(url_for("edit_booking", booking_id=booking_id))
+
+    try:
+        due_date = datetime.strptime(due_str, "%Y-%m-%d").date()
+        amount = float(amount_str)
+    except ValueError:
+        flash("Data ou valor da parcela inválidos.", "error")
+        return redirect(url_for("edit_booking", booking_id=booking_id))
+
+    p = Payment(
+        booking_id=b.id,
+        due_date=due_date,
+        amount=amount,
+        note=note,
+    )
+    db.session.add(p)
+    db.session.commit()
+    flash("Parcela adicionada com sucesso.", "success")
+    return redirect(url_for("edit_booking", booking_id=booking_id))
+
+
+@app.route("/payments/<int:payment_id>/toggle-paid", methods=["POST"])
+@login_required
+def payment_toggle_paid(payment_id):
+    p = Payment.query.get_or_404(payment_id)
+
+    if p.status == "pago":
+        p.status = "pendente"
+        p.paid_date = None
+    else:
+        p.status = "pago"
+        p.paid_date = date.today()
+
+    db.session.commit()
+    flash("Status do pagamento atualizado.", "success")
+
+    ref = request.referrer or url_for("edit_booking", booking_id=p.booking_id)
+    return redirect(ref)
+
+
+@app.route("/reports/receivables")
+@login_required
+def receivables_report():
+    status = request.args.get("status", "pendente")
+
+    query = Payment.query.join(Booking).join(Guest)
+
+    if status != "todos":
+        query = query.filter(Payment.status == status)
+
+    payments = query.order_by(Payment.due_date.asc()).all()
+    total = sum((p.amount or 0) for p in payments)
+
+    return render_template(
+        "receivables_report.html",
+        payments=payments,
+        total=total,
+        status=status,
+        br_currency=br_currency,
+        br_date=br_date,
+        today=date.today(),
+    )
 
 # -------- API calendário e saúde
 @app.route("/api/events")

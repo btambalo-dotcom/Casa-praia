@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="h5 mb-3">Contas a Receber</h2>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">Status</label>
+    {% set s = status or "pendente" %}
+    <select name="status" class="form-select">
+      <option value="pendente" {% if s == "pendente" %}selected{% endif %}>Somente pendentes</option>
+      <option value="pago" {% if s == "pago" %}selected{% endif %}>Somente pagos</option>
+      <option value="todos" {% if s == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </div>
+  <div class="col-md-3 d-flex align-items-end">
+    <button class="btn btn-primary">Filtrar</button>
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr>
+        <th>Vencimento</th>
+        <th>Hóspede</th>
+        <th>Período</th>
+        <th>Valor</th>
+        <th>Status</th>
+        <th>Pago em</th>
+        <th>Obs.</th>
+        <th>Reserva</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if payments %}
+        {% for p in payments %}
+        <tr class="{% if p.status == 'pendente' and p.due_date < today %}table-danger{% endif %}">
+          <td>{{ br_date(p.due_date) }}</td>
+          <td>{{ p.booking.guest.name }}</td>
+          <td>{{ br_date(p.booking.check_in) }} a {{ br_date(p.booking.check_out) }}</td>
+          <td>{{ br_currency(p.amount) }}</td>
+          <td>
+            {% if p.status == "pago" %}
+              <span class="badge bg-success">Pago</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pendente</span>
+            {% endif %}
+          </td>
+          <td>{{ br_date(p.paid_date) if p.paid_date else "-" }}</td>
+          <td>{{ p.note or "" }}</td>
+          <td>
+            <a href="{{ url_for('edit_booking', booking_id=p.booking_id) }}" class="btn btn-sm btn-outline-secondary">
+              Ver reserva
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="8" class="text-muted small">Nenhuma parcela encontrada.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th colspan="3" class="text-end">Total:</th>
+        <th>{{ br_currency(total) }}</th>
+        <th colspan="4"></th>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% endblock %}

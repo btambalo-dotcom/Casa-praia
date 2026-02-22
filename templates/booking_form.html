@@ -1,28 +1,192 @@
-{% extends 'base.html' %}{% block content %}
-<h2 class='h5 mb-3'>{{ 'Editar' if booking else 'Nova' }} Reserva</h2>
-<form method='post' class='row g-3' enctype='multipart/form-data'>
-<div class='col-md-6'><label class='form-label'>Hóspede *</label>
-<select name='guest_id' class='form-select' required>
-<option value=''>Selecione...</option>
-{% for g in guests %}<option value='{{ g.id }}' {% if booking and booking.guest_id==g.id %}selected{% endif %}>{{ g.name }} {% if g.phone %}({{ g.phone }}){% endif %}</option>{% endfor %}
-</select></div>
-<div class='col-md-3'><label class='form-label'>Check-in *</label><input type='date' name='check_in' class='form-control' value='{{ booking.check_in if booking else '' }}' required></div>
-<div class='col-md-3'><label class='form-label'>Check-out *</label><input type='date' name='check_out' class='form-control' value='{{ booking.check_out if booking else '' }}' required></div>
-<div class='col-md-3'><label class='form-label'>Status</label>
-{% set s = booking.status if booking else 'pendente' %}
-<select name='status' class='form-select'>{% for opt in ['pendente','confirmada','cancelada'] %}
-<option value='{{ opt }}' {% if s==opt %}selected{% endif %}>{{ opt|capitalize }}</option>{% endfor %}</select></div>
-<div class='col-md-3'><label class='form-label'>Forma de pagamento</label>
-<input name='payment_method' class='form-control' value='{{ booking.payment_method if booking else '' }}' placeholder='PIX, dinheiro, cartão...'></div>
-<div class='col-md-3'><label class='form-label'>Valor total (R$)</label><input type='number' step='0.01' name='price_total' class='form-control' value='{{ booking.price_total if booking and booking.price_total is not none else '' }}'></div>
+{% extends 'base.html' %}
+{% block content %}
+<h2 class="h5 mb-3">{{ 'Editar' if booking else 'Nova' }} Reserva</h2>
 
-<div class='col-md-3'><label class='form-label'>Valor do sinal (R$)</label><input type='number' step='0.01' name='deposit_amount' class='form-control' value='{{ booking.deposit_amount if booking and booking.deposit_amount is not none else '' }}'></div>
-<div class='col-md-3'><label class='form-label'>Nº de parcelas</label><input type='number' step='1' name='installments_count' class='form-control' value='{{ booking.installments_count if booking and booking.installments_count is not none else '' }}'></div>
-<div class='col-md-3'><label class='form-label'>Valor de cada parcela (R$)</label><input type='number' step='0.01' name='installment_value' class='form-control' value='{{ booking.installment_value if booking and booking.installment_value is not none else '' }}'></div>
-<div class='col-12'><label class='form-label'>Datas de vencimento (manual)</label><input name='installments_due' class='form-control' placeholder='ex.: 05/11, 05/12 e 05/01' value='{{ booking.installments_due if booking and booking.installments_due else "" }}'></div>
+<form method="post" class="row g-3" enctype="multipart/form-data">
+  <div class="col-md-6">
+    <label class="form-label">Hóspede *</label>
+    <select name="guest_id" class="form-select" required>
+      <option value="">Selecione...</option>
+      {% for g in guests %}
+      <option value="{{ g.id }}" {% if booking and booking.guest_id == g.id %}selected{% endif %}>
+        {{ g.name }}{% if g.phone %} ({{ g.phone }}){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
 
-<div class='col-12'><label class='form-label'>Observações</label><textarea name='note' rows='3' class='form-control'>{{ booking.note if booking else '' }}</textarea></div>
-<div class='col-12'><label class='form-label'>Assinatura do Locatário (PNG/JPG, opcional)</label><input type='file' name='tenant_signature' accept='image/*' class='form-control'></div>
-<div class='col-12 d-flex gap-2'><button class='btn btn-primary'>Salvar</button><a class='btn btn-outline-secondary' href='{{ url_for("bookings_list") }}'>Cancelar</a></div>
+  <div class="col-md-3">
+    <label class="form-label">Check-in *</label>
+    <input type="date" name="check_in" class="form-control" value="{{ booking.check_in if booking else '' }}" required>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Check-out *</label>
+    <input type="date" name="check_out" class="form-control" value="{{ booking.check_out if booking else '' }}" required>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Status</label>
+    {% set s = booking.status if booking else 'pendente' %}
+    <select name="status" class="form-select">
+      {% for opt in ['pendente','confirmada','cancelada'] %}
+      <option value="{{ opt }}" {% if s == opt %}selected{% endif %}>{{ opt|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Forma de pagamento</label>
+    <input name="payment_method" class="form-control" value="{{ booking.payment_method if booking else '' }}" placeholder="PIX, dinheiro, cartão...">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Valor total (R$)</label>
+    <input type="number" step="0.01" name="price_total" class="form-control" value="{{ booking.price_total if booking and booking.price_total is not none else '' }}">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Sinal / Entrada (R$)</label>
+    <input type="number" step="0.01" name="deposit_amount" class="form-control" value="{{ booking.deposit_amount if booking and booking.deposit_amount is not none else '' }}">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Nº de parcelas</label>
+    <input type="number" step="1" min="0" name="installments_count" class="form-control" id="installments_count" value="{{ booking.installments_count if booking and booking.installments_count is not none else '' }}">
+    <div class="form-text">Ao informar o número de parcelas, os campos detalhados aparecerão abaixo.</div>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Valor de cada parcela (R$)</label>
+    <input type="number" step="0.01" name="installment_value" class="form-control" value="{{ booking.installment_value if booking and booking.installment_value is not none else '' }}">
+    <div class="form-text">Opcional, apenas para referência.</div>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Observações / descrição das parcelas (texto livre)</label>
+    <textarea name="installments_due" class="form-control" rows="2" placeholder="Ex: 10/03, 10/04, 10/05...">{{ booking.installments_due if booking else '' }}</textarea>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Observações gerais da reserva</label>
+    <textarea name="note" class="form-control" rows="3">{{ booking.note if booking else '' }}</textarea>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Assinatura do locatário (imagem)</label>
+    <input type="file" name="tenant_signature" accept="image/*" class="form-control">
+    <div class="form-text">Opcional. Se enviar, será usada no contrato e recibos.</div>
+  </div>
+
+  <div class="col-12">
+    <hr>
+    <h3 class="h6 mb-2">Detalhamento das parcelas (valor e vencimento)</h3>
+    <p class="text-muted small mb-2">
+      Informe o <strong>Nº de parcelas</strong> acima. Em seguida, preencha o valor e a data de vencimento de cada parcela abaixo.
+    </p>
+    <div id="installments-details"></div>
+  </div>
+
+  <div class="col-12 mt-3">
+    <button class="btn btn-primary">Salvar</button>
+    <a href="{{ url_for('bookings_list') }}" class="btn btn-outline-secondary ms-2">Cancelar</a>
+  </div>
 </form>
+
+{% if booking %}
+<hr class="mt-4">
+<h3 class="h6 mb-2">Parcelas já cadastradas</h3>
+
+<div class="table-responsive mb-3">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Vencimento</th>
+        <th>Valor</th>
+        <th>Status</th>
+        <th>Pago em</th>
+        <th>Obs.</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set payments_list = booking.payments.order_by(Payment.due_date.asc()).all() %}
+      {% if payments_list %}
+        {% for p in payments_list %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ br_date(p.due_date) }}</td>
+          <td>{{ br_currency(p.amount) }}</td>
+          <td>
+            {% if p.status == "pago" %}
+              <span class="badge bg-success">Pago</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">Pendente</span>
+            {% endif %}
+          </td>
+          <td>{{ br_date(p.paid_date) if p.paid_date else "-" }}</td>
+          <td>{{ p.note or "" }}</td>
+          <td>
+            <form method="post" action="{{ url_for('payment_toggle_paid', payment_id=p.id) }}">
+              <button class="btn btn-sm btn-outline-primary">
+                {% if p.status == "pago" %}Desmarcar{% else %}Marcar pago{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7" class="text-muted small">Nenhuma parcela cadastrada ainda.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const countInput = document.getElementById("installments_count");
+  const container = document.getElementById("installments-details");
+  if (!countInput || !container) return;
+
+  function buildRows() {
+    const raw = countInput.value || "";
+    const n = parseInt(raw, 10);
+    if (!n || n <= 0) {
+      container.innerHTML = "";
+      return;
+    }
+    container.innerHTML = "";
+    for (let i = 1; i <= n; i++) {
+      const row = document.createElement("div");
+      row.className = "row g-2 align-items-end mb-2";
+      row.innerHTML = `
+        <div class="col-md-2">
+          <label class="form-label mb-0">Parcela #${i}</label>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Vencimento</label>
+          <input type="date" name="payment_due_${i}" class="form-control">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Valor (R$)</label>
+          <input type="number" step="0.01" name="payment_amount_${i}" class="form-control">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Obs.</label>
+          <input type="text" name="payment_note_${i}" class="form-control" placeholder="Opcional">
+        </div>
+      `;
+      container.appendChild(row);
+    }
+  }
+
+  countInput.addEventListener("change", buildRows);
+  countInput.addEventListener("keyup", function() { buildRows(); });
+});
+</script>
+
 {% endblock %}
