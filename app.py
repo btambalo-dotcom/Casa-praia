@@ -193,6 +193,14 @@ def init_db():
     db.create_all(); seed_admin_and_defaults()
     print("DB pronto em:", app.config["SQLALCHEMY_DATABASE_URI"])
 
+# Cria o banco automaticamente ao iniciar a aplicação (se ainda não existir)
+with app.app_context():
+    try:
+        init_db()
+    except Exception as e:
+        # Evita quebrar o app se o DB já existir ou der erro leve
+        print("Aviso ao inicializar o banco:", e)
+
 # ===== HELPERS =====
 def sanitize_phone_for_wa(phone:str):
     if not phone: return ""
