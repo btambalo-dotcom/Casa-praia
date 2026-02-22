@@ -1,0 +1,16 @@
+{% extends 'public_base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6 text-center">
+    <h2 class="h5 mb-3">Assinatura recebida com sucesso ✅</h2>
+    <p>Obrigado, {{ booking.guest.name }}.</p>
+    <p class="mb-3">
+      Sua assinatura foi vinculada à reserva #{{ booking.id }}<br>
+      para o período de {{ booking.check_in.strftime('%d/%m/%Y') }} a {{ booking.check_out.strftime('%d/%m/%Y') }}.
+    </p>
+    <p class="small text-muted">
+      Você já pode fechar esta página. Se tiver qualquer dúvida, fale diretamente com o anfitrião.
+    </p>
+  </div>
+</div>
+{% endblock %}

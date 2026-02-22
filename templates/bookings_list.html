@@ -27,6 +27,7 @@
   <a class='btn btn-sm btn-outline-dark' target='_blank' href='{{ url_for("booking_contract", booking_id=b.id) }}'>Contrato PDF</a>
   <a class='btn btn-sm btn-outline-secondary' target='_blank' href='{{ url_for("contracts_download", filename="contrato_reserva_" ~ b.id ~ ".pdf") }}'>Baixar (salvo)</a>
   <form action='{{ url_for("booking_whatsapp_send", booking_id=b.id) }}' method='post' class='d-inline'><button class='btn btn-sm btn-outline-primary'>WhatsApp (auto)</button></form>
+  <a class='btn btn-sm btn-outline-warning ms-1' target='_blank' href='{{ url_for("public_sign", booking_id=b.id) }}'>Assinatura online</a>
 </td></tr>
 {% else %}<tr><td colspan='7' class='text-muted'>Nenhuma reserva.</td></tr>{% endfor %}
 </tbody></table></div>

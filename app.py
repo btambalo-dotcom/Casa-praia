@@ -1,5 +1,5 @@
 
-import os, io, csv, re
+import os, io, csv, re, base64
 from datetime import datetime, date
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, send_file, send_from_directory
@@ -34,6 +34,12 @@ def get_contract_dir():
 def get_signature_dir():
     d = os.path.join(_base_dir(), "signatures")
     os.makedirs(d, exist_ok=True); return d
+
+def allowed_image(filename):
+    if not filename:
+        return False
+    ext = filename.rsplit(".", 1)[-1].lower()
+    return ext in {"png", "jpg", "jpeg", "webp"}
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = get_database_url()
@@ -355,7 +361,8 @@ def save_contract_pdf(b: 'Booking'):
                 x = 3*cm
             else:
                 img_path = os.path.join(sig_dir, f"tenant_{b.id}.png")
-                x = 11*cm
+                # mesma posição horizontal da assinatura do locador
+                x = 3*cm
 
             if os.path.isfile(img_path):
                 img_height = 2*cm
@@ -363,8 +370,21 @@ def save_contract_pdf(b: 'Booking'):
                 img_y = y
                 c.drawImage(ImageReader(img_path), x, img_y, width=img_width, height=img_height,
                             preserveAspectRatio=True, mask='auto')
-                # move y para baixo da assinatura
-                y = img_y - 1.0*cm
+
+                # mensagem de assinatura digital para o locatário
+                if stripped == "{assinatura_locatario}":
+                    try:
+                        ts = os.path.getmtime(img_path)
+                        signed_str = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+                    except Exception:
+                        signed_str = date.today().strftime("%d/%m/%Y")
+                    c.setFont("Helvetica", 8)
+                    c.drawString(x, img_y - 0.4*cm, f"Assinado digitalmente em {signed_str}")
+                    c.setFont("Helvetica", 10)
+                    y = img_y - 1.2*cm
+                else:
+                    # move y para baixo da assinatura
+                    y = img_y - 1.0*cm
 
             # não desenha o texto do marcador
             continue
@@ -665,6 +685,52 @@ def settings_signatures():
             f.stream.seek(0); open(path, "wb").write(f.read())
             msg="Assinatura do locador atualizada!"
     return render_template("settings_signatures.html", message=msg)
+
+
+
+
+
+# --- Assinatura pública do contrato (envio de imagem pelo hóspede)
+@app.route("/sign/<int:booking_id>", methods=["GET", "POST"])
+def public_sign(booking_id):
+    b = Booking.query.get_or_404(booking_id)
+    if request.method == "POST":
+        # Primeiro tenta assinatura desenhada na tela (canvas)
+        data_url = (request.form.get("signature_data") or "").strip()
+        sig_bytes = None
+        if data_url:
+            try:
+                # esperado: data:image/png;base64,AAAA...
+                if "," in data_url:
+                    header, b64data = data_url.split(",", 1)
+                else:
+                    b64data = data_url
+                sig_bytes = base64.b64decode(b64data)
+            except Exception:
+                sig_bytes = None
+
+        if sig_bytes is None:
+            # fallback: upload de arquivo de imagem
+            f = request.files.get("signature")
+            if not f or not f.filename:
+                flash("Envie a sua assinatura (desenhada na tela ou como imagem).", "error")
+                return redirect(request.url)
+            if not allowed_image(f.filename):
+                flash("Envie um arquivo de imagem do tipo PNG ou JPG.", "error")
+                return redirect(request.url)
+            sig_bytes = f.read()
+
+        sig_dir = get_signature_dir()
+        os.makedirs(sig_dir, exist_ok=True)
+        filename = f"tenant_{b.id}.png"
+        path = os.path.join(sig_dir, filename)
+        with open(path, "wb") as fp:
+            fp.write(sig_bytes)
+
+        flash("Assinatura enviada com sucesso! Obrigado.", "success")
+        return render_template("sign_success.html", booking=b)
+
+    return render_template("sign_form.html", booking=b)
 
 
 
